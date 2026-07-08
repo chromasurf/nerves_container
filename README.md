@@ -54,12 +54,14 @@ Each `container run` boots its own VM. Apple's defaults (4 CPUs / 1 GB RAM) are 
 ```elixir
 build_runner_config: [
   cpus: 8,
-  memory: "24G",
+  memory: "24G",     # or :host to allocate all host RAM (e.g. WebKit builds)
   volume_size: "256G",
   # custom image, same shape as the Docker runner's :docker key
   container: {"Containerfile", "my_system:0.1.0"}
 ]
 ```
+
+The memory ceiling is cheap either way — Virtualization.framework only faults pages in as the VM actually uses them.
 
 or environment variables (take precedence): `NERVES_CONTAINER_CPUS`, `NERVES_CONTAINER_MEMORY`, `NERVES_CONTAINER_VOLUME_SIZE`.
 

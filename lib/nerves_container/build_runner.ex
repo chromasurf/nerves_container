@@ -49,12 +49,14 @@ defmodule NervesContainer.BuildRunner do
 
       build_runner_config: [
         cpus: 8,
-        memory: "24G",
+        memory: "24G",     # or :host to allocate all host RAM (e.g. WebKit builds)
         volume_size: "256G"
       ]
 
   Environment variables `NERVES_CONTAINER_CPUS`, `NERVES_CONTAINER_MEMORY` and
-  `NERVES_CONTAINER_VOLUME_SIZE` take precedence over the config.
+  `NERVES_CONTAINER_VOLUME_SIZE` take precedence over the config. The memory
+  ceiling is cheap: Virtualization.framework only faults pages in as the VM
+  actually uses them.
 
   ## Volumes and cache
 
@@ -355,38 +357,42 @@ defmodule NervesContainer.BuildRunner do
       System.get_env("NERVES_CONTAINER_CPUS") ||
         to_string(config[:cpus] || System.schedulers_online())
 
-    memory = System.get_env("NERVES_CONTAINER_MEMORY") || config[:memory] || default_memory()
+    memory = System.get_env("NERVES_CONTAINER_MEMORY") || config_memory(config[:memory])
 
     ["--cpus", cpus, "--memory", memory]
   end
 
+  # :host allocates all host RAM (memory-hungry builds like WebKit); the
+  # default is half the host RAM (minimum 8G). The ceiling is cheap either
+  # way: Virtualization.framework only faults pages in as the VM uses them.
+  defp config_memory(:host), do: "#{max(host_memory_gb(), 8)}G"
+  defp config_memory(nil), do: "#{max(div(host_memory_gb(), 2), 8)}G"
+  defp config_memory(memory), do: memory
+
   # Memoized — resource_args/1 runs once per container run, but the host
   # RAM size doesn't change mid-build.
-  defp default_memory() do
-    case :persistent_term.get({__MODULE__, :default_memory}, nil) do
+  defp host_memory_gb() do
+    case :persistent_term.get({__MODULE__, :host_memory_gb}, nil) do
       nil ->
-        memory = compute_default_memory()
-        :persistent_term.put({__MODULE__, :default_memory}, memory)
-        memory
+        gb = read_host_memory_gb()
+        :persistent_term.put({__MODULE__, :host_memory_gb}, gb)
+        gb
 
-      memory ->
-        memory
+      gb ->
+        gb
     end
   end
 
-  defp compute_default_memory() do
+  defp read_host_memory_gb() do
     case System.cmd("sysctl", ["-n", "hw.memsize"]) do
       {result, 0} ->
-        half_gb =
-          result
-          |> String.trim()
-          |> String.to_integer()
-          |> div(2 * 1024 * 1024 * 1024)
-
-        "#{max(half_gb, 8)}G"
+        result
+        |> String.trim()
+        |> String.to_integer()
+        |> div(1024 * 1024 * 1024)
 
       _ ->
-        "8G"
+        16
     end
   end
 
