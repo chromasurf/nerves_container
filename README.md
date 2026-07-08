@@ -74,6 +74,8 @@ build_runner_config: [
 
 or environment variables (take precedence): `NERVES_CONTAINER_CPUS`, `NERVES_CONTAINER_MEMORY`, `NERVES_CONTAINER_VOLUME_SIZE`.
 
+An existing `docker: {...}` key (for the stock Docker build runner) is honored as an image fallback, so cross-platform systems don't declare the same image twice — `container:` takes precedence when both are set.
+
 ## How It Works
 
 Like the Docker build runner, a build is four sequential container runs sharing a named volume (`<app>-<id>`, id stored at `ARTIFACT_DIR/.container_id`):

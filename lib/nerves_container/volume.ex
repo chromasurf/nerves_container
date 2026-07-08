@@ -59,14 +59,12 @@ defmodule NervesContainer.Volume do
     end
   end
 
-  @spec exists?(String.t()) :: boolean()
-  def exists?(volume_name) do
-    # `container volume list` has no name filter, so filter here
+  @spec existing_names() :: [String.t()]
+  def existing_names() do
+    # `container volume list` has no name filter, so callers filter here
     case System.cmd("container", ["volume", "list", "-q"], stderr_to_stdout: true) do
       {result, 0} ->
-        result
-        |> String.split("\n", trim: true)
-        |> Enum.member?(volume_name)
+        String.split(result, "\n", trim: true)
 
       {result, _} ->
         Mix.raise("""
@@ -79,8 +77,9 @@ defmodule NervesContainer.Volume do
     end
   end
 
-  @spec create(String.t(), String.t()) :: :noop
-  def create(volume_name, size \\ @default_size) do
+  @spec create(String.t(), String.t() | nil) :: :noop
+  def create(volume_name, size \\ nil) do
+    size = size || @default_size
     shell_info("Creating build volume #{volume_name} (#{size})")
 
     case System.cmd("container", ["volume", "create", volume_name, "-s", size]) do

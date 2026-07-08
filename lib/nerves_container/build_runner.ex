@@ -18,9 +18,15 @@ defmodule NervesContainer.BuildRunner do
         ]
       end
 
+      # Apple Silicon Mac with the container CLI installed -> NervesContainer.
+      # Everything else falls back to the Nerves default: Local on Linux,
+      # Docker on Windows and on Macs without apple/container.
       defp build_runner do
-        case :os.type() do
-          {:unix, :darwin} -> NervesContainer.BuildRunner
+        with {:unix, :darwin} <- :os.type(),
+             "aarch64" <> _ <- to_string(:erlang.system_info(:system_architecture)),
+             exe when is_binary(exe) <- System.find_executable("container") do
+          NervesContainer.BuildRunner
+        else
           _ -> nil
         end
       end
@@ -34,6 +40,10 @@ defmodule NervesContainer.BuildRunner do
       build_runner_config: [
         container: {"Containerfile", "my_system:0.1.0"}
       ]
+
+  An existing `docker: {...}` key (for the stock Docker build runner) is
+  honored as a fallback, so cross-platform systems don't need to declare the
+  same image twice; `container:` takes precedence when both are set.
 
   ## Resources
 
@@ -132,7 +142,9 @@ defmodule NervesContainer.BuildRunner do
 
   @impl Nerves.Artifact.BuildRunner
   def clean(pkg) do
-    for name <- [Volume.name(pkg), Volume.platform_name(pkg)], Volume.exists?(name) do
+    existing = Volume.existing_names()
+
+    for name <- [Volume.name(pkg), Volume.platform_name(pkg)], name in existing do
       Volume.delete(name)
     end
 
@@ -149,13 +161,8 @@ defmodule NervesContainer.BuildRunner do
     _ = preflight(pkg)
     {_, image} = config(pkg)
 
-    resources = Enum.join(resource_args(pkg), " ")
-    mounts = Enum.join(mounts(pkg), " ")
-    ssh_mount = Enum.join(ssh_mount(), " ")
-    env_vars = Enum.join(env(), " ")
-
-    shell =
-      "container run --rm -it -w #{@working_dir} #{resources} #{env_vars} #{mounts} #{ssh_mount} #{image} /bin/bash"
+    opts = Enum.join(resource_args(pkg) ++ env() ++ mounts(pkg) ++ ssh_mount(), " ")
+    shell = "container run --rm -it -w #{@working_dir} #{opts} #{image} /bin/bash"
 
     sync_platform = Enum.join(@sync_platform_cmd, " ")
     create_build = create_build_cmd(pkg) |> Enum.join(" ")
@@ -299,7 +306,21 @@ defmodule NervesContainer.BuildRunner do
     ["--cpus", cpus, "--memory", memory]
   end
 
+  # Memoized — resource_args/1 runs once per container run, but the host
+  # RAM size doesn't change mid-build.
   defp default_memory() do
+    case :persistent_term.get({__MODULE__, :default_memory}, nil) do
+      nil ->
+        memory = compute_default_memory()
+        :persistent_term.put({__MODULE__, :default_memory}, memory)
+        memory
+
+      memory ->
+        memory
+    end
+  end
+
+  defp compute_default_memory() do
     case System.cmd("sysctl", ["-n", "hw.memsize"]) do
       {result, 0} ->
         half_gb =
@@ -430,11 +451,11 @@ defmodule NervesContainer.BuildRunner do
   defp config_check(pkg, name) do
     {containerfile, tag} = config(pkg)
 
-    for volume_name <- [name, Volume.platform_name(pkg)], !Volume.exists?(volume_name) do
-      case volume_size(pkg) do
-        nil -> Volume.create(volume_name)
-        size -> Volume.create(volume_name, size)
-      end
+    existing = Volume.existing_names()
+    size = volume_size(pkg)
+
+    for volume_name <- [name, Volume.platform_name(pkg)], volume_name not in existing do
+      Volume.create(volume_name, size)
     end
 
     if !Image.exists?(tag) do
