@@ -9,6 +9,12 @@ defmodule NervesContainer.MixProject do
       app: :nerves_container,
       version: @version,
       elixir: "~> 1.15",
+      # Registers this lib as a Nerves package so `nerves.precompile` compiles
+      # it BEFORE any system package build needs the runner module. Without
+      # this, fresh build dirs (new MIX_ENV, fresh checkout) hit
+      # UndefinedFunctionError on first compile: precompile builds the system
+      # before the regular deps-compile phase reaches this library.
+      nerves_package: [type: :build_runner],
       deps: deps(),
       description: description(),
       package: package(),
