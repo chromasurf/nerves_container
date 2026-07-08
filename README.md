@@ -6,29 +6,16 @@ This repository contains `nerves_container`, a Nerves build runner that uses [Ap
 
 ## Using
 
-Add the dependency and select the runner in your Nerves system's `mix.exs`. The selection is per host: Apple Silicon Macs with the `container` CLI use this runner, everything else keeps the stock Nerves behavior (native `Local` builds on Linux — CI, build servers — and `Docker` on Windows or Macs without apple/container):
+Add the dependency and select the runner in your Nerves system's `mix.exs` — on macOS only, so all other hosts (Linux build servers, CI, Windows) keep the stock Nerves runner selection untouched:
 
 ```elixir
 # mix.exs
 defp nerves_package do
   [
     type: :system,
-    build_runner: build_runner(),
+    build_runner: if(match?({:unix, :darwin}, :os.type()), do: NervesContainer.BuildRunner),
     # ...
   ]
-end
-
-# Apple Silicon Mac with the container CLI installed -> NervesContainer.
-# Everything else falls back to the Nerves default: Local on Linux,
-# Docker on Windows and on Macs without apple/container.
-defp build_runner do
-  with {:unix, :darwin} <- :os.type(),
-       "aarch64" <> _ <- to_string(:erlang.system_info(:system_architecture)),
-       exe when is_binary(exe) <- System.find_executable("container") do
-    NervesContainer.BuildRunner
-  else
-    _ -> nil
-  end
 end
 
 defp deps do
@@ -38,6 +25,8 @@ defp deps do
   ]
 end
 ```
+
+On macOS the rest of the host check happens at runtime (`NervesContainer.BuildRunner.available?/0`): Apple Silicon with the `container` CLI builds with Apple containers; Intel Macs or Macs without the CLI transparently fall back to `Docker` — the stock Nerves default on macOS anyway. Only the cheap OS check lives in `mix.exs`, because project config is evaluated before dependency code is loadable.
 
 Then build as usual:
 
