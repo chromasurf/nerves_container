@@ -8,28 +8,23 @@ defmodule NervesContainer.BuildRunner do
   `nerves_system_br` >= 1.28.0 (image runs as user `nerves`, working dir
   `/home/nerves/project`).
 
-  Select it per package in `mix.exs` (typically only on macOS):
+  Select it per package in `mix.exs` — on macOS only, so all other hosts
+  keep the stock Nerves runner selection untouched:
 
       defp nerves_package do
         [
           type: :system,
-          build_runner: build_runner(),
+          build_runner: if(match?({:unix, :darwin}, :os.type()), do: NervesContainer.BuildRunner),
           # ...
         ]
       end
 
-      # Apple Silicon Mac with the container CLI installed -> NervesContainer.
-      # Everything else falls back to the Nerves default: Local on Linux,
-      # Docker on Windows and on Macs without apple/container.
-      defp build_runner do
-        with {:unix, :darwin} <- :os.type(),
-             "aarch64" <> _ <- to_string(:erlang.system_info(:system_architecture)),
-             exe when is_binary(exe) <- System.find_executable("container") do
-          NervesContainer.BuildRunner
-        else
-          _ -> nil
-        end
-      end
+  On macOS the rest of the host check happens at runtime (see `available?/0`):
+  Apple Silicon with the `container` CLI builds with Apple containers,
+  otherwise the runner delegates to `Docker` — the stock Nerves default on
+  macOS anyway. Only the cheap, dependency-free OS check lives in `mix.exs`:
+  project config is evaluated before dependency code is loadable, so a call
+  into this library there would never resolve.
 
   ## Images
 
@@ -86,6 +81,7 @@ defmodule NervesContainer.BuildRunner do
   import NervesContainer.Utils
 
   alias Nerves.Artifact
+  alias Nerves.Artifact.BuildRunners
   alias NervesContainer.Image
   alias NervesContainer.Volume
 
@@ -105,13 +101,47 @@ defmodule NervesContainer.BuildRunner do
   ]
 
   @doc """
+  Whether this host can build with Apple containers: Apple Silicon Mac with
+  the `container` CLI installed. When this runner is selected on a host where
+  that's not the case, it delegates to the stock Nerves build runner for the
+  platform (see `fallback_runner/0`).
+  """
+  @spec available?() :: boolean()
+  def available?() do
+    match?({:unix, :darwin}, :os.type()) and
+      match?("aarch64" <> _, to_string(:erlang.system_info(:system_architecture))) and
+      is_binary(System.find_executable("container"))
+  end
+
+  @doc """
+  The stock Nerves build runner used when `available?/0` is false — mirrors
+  Nerves' default selection for `type: :system`: `Local` on Linux, `Docker`
+  everywhere else.
+  """
+  @spec fallback_runner() :: module()
+  def fallback_runner() do
+    case :os.type() do
+      {_, :linux} -> BuildRunners.Local
+      _ -> BuildRunners.Docker
+    end
+  end
+
+  @doc """
   Create an artifact for the package.
 
   Opts:
     `make_args:` - Extra arguments to be passed to make.
   """
   @impl Nerves.Artifact.BuildRunner
-  def build(pkg, _toolchain, opts) do
+  def build(pkg, toolchain, opts) do
+    if available?() do
+      do_build(pkg, opts)
+    else
+      fallback_runner().build(pkg, toolchain, opts)
+    end
+  end
+
+  defp do_build(pkg, opts) do
     _ = preflight(pkg)
 
     {:ok, pid} = Nerves.Utils.Stream.start_link(file: build_log_path())
@@ -130,7 +160,15 @@ defmodule NervesContainer.BuildRunner do
   end
 
   @impl Nerves.Artifact.BuildRunner
-  def archive(pkg, _toolchain, _opts) do
+  def archive(pkg, toolchain, opts) do
+    if available?() do
+      do_archive(pkg)
+    else
+      fallback_runner().archive(pkg, toolchain, opts)
+    end
+  end
+
+  defp do_archive(pkg) do
     _ = preflight(pkg)
 
     {:ok, pid} = Nerves.Utils.Stream.start_link(file: "archive.log")
@@ -142,6 +180,14 @@ defmodule NervesContainer.BuildRunner do
 
   @impl Nerves.Artifact.BuildRunner
   def clean(pkg) do
+    if available?() do
+      do_clean(pkg)
+    else
+      fallback_runner().clean(pkg)
+    end
+  end
+
+  defp do_clean(pkg) do
     existing = Volume.existing_names()
 
     for name <- [Volume.name(pkg), Volume.platform_name(pkg)], name in existing do
@@ -158,6 +204,14 @@ defmodule NervesContainer.BuildRunner do
   """
   @spec system_shell(Nerves.Package.t()) :: :ok
   def system_shell(pkg) do
+    if available?() do
+      do_system_shell(pkg)
+    else
+      fallback_runner().system_shell(pkg)
+    end
+  end
+
+  defp do_system_shell(pkg) do
     _ = preflight(pkg)
     {_, image} = config(pkg)
 
