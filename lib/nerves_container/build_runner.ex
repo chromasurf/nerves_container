@@ -84,6 +84,7 @@ defmodule NervesContainer.BuildRunner do
 
   alias Nerves.Artifact
   alias Nerves.Artifact.BuildRunners
+  alias NervesContainer.Container
   alias NervesContainer.Image
   alias NervesContainer.Volume
 
@@ -249,9 +250,37 @@ defmodule NervesContainer.BuildRunner do
     name = Volume.name(pkg)
     _ = host_check()
     _ = service_check()
+    _ = remove_stale_containers(pkg)
     _ = config_check(pkg, name)
     _ = set_volume_permissions(pkg)
     name
+  end
+
+  # A container that terminated abnormally (host sleep/reboot, service stop,
+  # killed CLI) survives `--rm` as a stopped entry and keeps its volume
+  # attachments reserved — new VMs then fail to bootstrap with VZErrorDomain
+  # "The storage device attachment is invalid". Remove such leftovers; refuse
+  # to run while the volumes are attached to a container that is still running.
+  defp remove_stale_containers(pkg) do
+    volumes = [Volume.name(pkg), Volume.platform_name(pkg)]
+
+    for %{id: id, state: state} <- Container.using_volumes(volumes) do
+      case state do
+        "running" ->
+          Mix.raise("""
+          Container #{id} is running and holds the build volumes for
+          #{pkg.app} — is another build already in progress? Stop it first:
+
+              container stop #{id}
+          """)
+
+        _ ->
+          shell_info("Removing stale build container #{id}")
+          Container.delete(id)
+      end
+    end
+
+    :ok
   end
 
   # Build Commands
@@ -309,15 +338,72 @@ defmodule NervesContainer.BuildRunner do
         :ok
 
       {_result, _} ->
+        log_tail = end_of_build_log()
+
         Mix.raise("""
         The Nerves container build_runner encountered an error while building:
 
         -----
-        #{end_of_build_log()}
+        #{log_tail}
         -----
 
         See #{build_log_path()}.
+        #{hint_for(log_tail)}\
         """)
+    end
+  end
+
+  @doc false
+  @spec hint_for(String.t()) :: String.t()
+  def hint_for(output) do
+    cond do
+      output =~ "storage device attachment is invalid" ->
+        """
+
+        Hint: a leftover container is probably still holding the build
+        volumes (interrupted build, host sleep/reboot). Check
+        `container list --all`; `mix nerves_container.clean` removes
+        leftover containers and the build volumes.
+        """
+
+      output =~ "No space left on device" ->
+        """
+
+        Hint: either the host disk is full or the build volume hit its size
+        ceiling. `mix nerves_container.clean` deletes this system's build
+        volumes; the ceiling is configurable via
+        build_runner_config: [volume_size: "256G"].
+        """
+
+      output =~ "name resolution" or output =~ "Host is unreachable" or
+          output =~ "unable to resolve host" ->
+        """
+
+        Hint: the container has no network access. See "macOS 15: Containers
+        Have No Network" in the nerves_container README for the subnet fix.
+        """
+
+      output =~ "XPC connection error" or output =~ "apiserver is not running" ->
+        """
+
+        Hint: the container system service is not responding — try
+        `container system start`.
+        """
+
+      output =~ "Killed signal" or
+          (output =~ "ninja: build stopped" and not (output =~ "error:")) ->
+        """
+
+        Hint: a compiler was likely OOM-killed (typical for WebKit builds —
+        the kill message often gets lost in parallel output). Re-running
+        `mix compile` resumes where the build stopped. To fix it for good,
+        lower the parallelism so jobs fit into the VM memory, e.g.
+        NERVES_CONTAINER_CPUS=8 mix compile — or persist it via
+        build_runner_config: [cpus: 8].
+        """
+
+      true ->
+        ""
     end
   end
 
@@ -337,15 +423,16 @@ defmodule NervesContainer.BuildRunner do
       ["run", "--rm", "--progress", "none", "--uid", "0", "--gid", "0"] ++
         mounts(pkg) ++ [image, "sh", "-c", prep_cmd]
 
-    case Mix.Nerves.Utils.shell("container", args) do
-      {_result, 0} ->
+    case System.cmd("container", args, stderr_to_stdout: true) do
+      {_output, 0} ->
         :ok
 
-      {result, _} ->
-        Mix.raise("""
-        The Nerves container build_runner encountered an error while setting permissions:
+      {output, _} ->
+        Mix.shell().info(output)
 
-        #{inspect(result)}
+        Mix.raise("""
+        The Nerves container build_runner could not prepare the build volumes:
+        #{hint_for(output)}\
         """)
     end
   end
