@@ -1,5 +1,14 @@
 # Chromasurf — Nerves Container Build Runner
 
+> [!WARNING]
+> Friendly heads-up: this is our internal Formrausch tooling and so far it has
+> only ever built our own Chromasurf systems. Everything was lovingly tested on
+> **macOS 15.7** and nothing else — apple/container officially wants macOS 26,
+> but we're not emotionally ready for Tahoe's super-rounded corners yet. 🙂
+> Fellow macOS-15 holdouts: if your containers come up without internet (ours
+> did), the little network fix below sorts it out. Everyone braver than us:
+> let us know how it goes!
+
 **Chromasurf** is an industrial IoT platform built on [Elixir](https://elixir-lang.org) and [Nerves](https://nerves-project.org), developed by [Formrausch](https://formrausch.com). It provides the firmware foundation for connected HMI terminals, gateways, and sensor nodes — with automatic network clustering, over-the-air updates, real-time messaging, and full hardware abstraction built in. Designed for production use in manufacturing, process control, and industrial automation.
 
 This repository contains `nerves_container`, a Nerves build runner that uses [Apple's `container` CLI](https://github.com/apple/container) instead of Docker to build Nerves systems on macOS. It is a faithful port of Nerves' stock `Nerves.Artifact.BuildRunners.Docker` — same build steps, same mounts, same official `ghcr.io/nerves-project/nerves_system_br` image — but each step runs in a lightweight, natively-arm64 Linux VM managed by Apple's container tooling. No Docker Desktop required.
@@ -69,6 +78,8 @@ An existing `docker: {...}` key (for the stock Docker build runner) is honored a
 
 ## How It Works
 
+The default build image is **`ghcr.io/nerves-project/nerves_system_br:<version>`** — the official Nerves build image, with the version taken from the system's `nerves_system_br` dependency. It is pulled automatically on first use and is multi-arch, so it runs natively as arm64 on Apple Silicon. A custom image can be configured via `build_runner_config` (see Resources above).
+
 Like the Docker build runner, a build is four sequential container runs sharing a named volume (`<app>-<id>`, id stored at `ARTIFACT_DIR/.container_id`):
 
 1. `create-build.sh <defconfig> /home/nerves/project`
@@ -127,7 +138,7 @@ Note: container IPs then share the subnet with any other vmnet VMs (e.g. UTM). T
 
 ---
 
-[formrausch](https://formrausch.com) /ˈfɔʁmˌʁaʊ̯ʃ/ is a creative studio uniting designers and developers to build beautiful, functional digital products.
+<img src="assets/fr_io_logo_signet_red.svg" alt="formrausch logo" height="24" align="top"> [formrausch](https://formrausch.com) /ˈfɔʁmˌʁaʊ̯ʃ/ is a creative studio uniting designers and developers to build beautiful, functional digital products.
 
 ## License
 
