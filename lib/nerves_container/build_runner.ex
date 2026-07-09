@@ -137,11 +137,25 @@ defmodule NervesContainer.BuildRunner do
   """
   @impl Nerves.Artifact.BuildRunner
   def build(pkg, toolchain, opts) do
-    if available?() do
-      do_build(pkg, opts)
-    else
-      fallback_runner().build(pkg, toolchain, opts)
+    cond do
+      cleaning?() ->
+        # Mix compiles the project to resolve tasks it hasn't loaded yet, and
+        # the :nerves_package compiler would then start a full Buildroot build
+        # of a stale system — absurd when the user is running nerves.clean.
+        # :noop is Nerves.Artifact.build/2's documented skip path.
+        shell_info("Skipping build of #{pkg.app} — a clean task is running")
+        :noop
+
+      available?() ->
+        do_build(pkg, opts)
+
+      true ->
+        fallback_runner().build(pkg, toolchain, opts)
     end
+  end
+
+  defp cleaning?() do
+    match?(["nerves.clean" | _], System.argv())
   end
 
   defp do_build(pkg, opts) do
@@ -362,16 +376,16 @@ defmodule NervesContainer.BuildRunner do
 
         Hint: a leftover container is probably still holding the build
         volumes (interrupted build, host sleep/reboot). Check
-        `container list --all`; `mix nerves_container.clean` removes
-        leftover containers and the build volumes.
+        `container list --all` and remove leftovers with
+        `container delete <id>`, then retry.
         """
 
       output =~ "No space left on device" ->
         """
 
         Hint: either the host disk is full or the build volume hit its size
-        ceiling. `mix nerves_container.clean` deletes this system's build
-        volumes; the ceiling is configurable via
+        ceiling. Free space with `mix nerves.clean <app>` or
+        `container volume delete <name>`; the ceiling is configurable via
         build_runner_config: [volume_size: "256G"].
         """
 
