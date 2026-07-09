@@ -110,9 +110,9 @@ container list            # shows leftover build containers
 container stop <id>       # stop them
 ```
 
-Disk usage lives in the named volumes (`container volume list`). To free it, run `mix nerves_container.clean` in the system project — it stops and removes leftover containers (which otherwise keep the volumes locked) and deletes all of the system's build volumes, including orphaned ones; `--yes` skips the confirmation. `mix nerves.clean <app>` additionally clears the unpacked artifact cache.
+Disk usage lives in the named volumes. To free it, run `mix nerves.clean <app>` in the system project (deletes the build volumes and the artifact cache), or work directly with the CLI: `container volume list` / `container volume delete <name>`. Leftover containers keep their volumes locked — remove them first (`container list --all` / `container delete <id>`).
 
-Build failures with known causes (volume held by a leftover container, disk full, no container network, service not running) print a targeted hint below the error.
+Build failures with known causes (volume held by a leftover container, disk full, no container network, service not running, OOM-killed compilers) print a targeted hint below the error.
 
 ## macOS 15: Containers Have No Network
 
