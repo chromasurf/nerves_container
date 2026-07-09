@@ -1,0 +1,49 @@
+defmodule NervesContainer.Container do
+  @moduledoc false
+  import NervesContainer.Utils
+
+  @doc """
+  All containers (any state) that reference one of the given named volumes.
+  Returns `%{id: String.t(), state: String.t()}` entries; fails open with `[]`
+  when the CLI or JSON output is unavailable.
+  """
+  @spec using_volumes([String.t()]) :: [%{id: String.t(), state: String.t()}]
+  def using_volumes(volumes) do
+    with {result, 0} <-
+           System.cmd("container", ["list", "--all", "--format", "json"], stderr_to_stdout: true),
+         {:ok, containers} <- Jason.decode(result) do
+      containers
+      |> Enum.filter(fn container ->
+        container
+        |> get_in(["configuration", "mounts"])
+        |> List.wrap()
+        |> Enum.any?(fn
+          %{"type" => %{"volume" => %{"name" => name}}} -> name in volumes
+          _ -> false
+        end)
+      end)
+      |> Enum.map(fn container ->
+        %{
+          id: container["id"] || get_in(container, ["configuration", "id"]),
+          state: get_in(container, ["status", "state"]) || "stopped"
+        }
+      end)
+    else
+      _ -> []
+    end
+  end
+
+  @spec stop(String.t()) :: :ok
+  def stop(id) do
+    shell_info("Stopping container #{id}")
+    _ = System.cmd("container", ["stop", id], stderr_to_stdout: true)
+    :ok
+  end
+
+  @spec delete(String.t()) :: :ok
+  def delete(id) do
+    shell_info("Removing container #{id}")
+    _ = System.cmd("container", ["delete", id], stderr_to_stdout: true)
+    :ok
+  end
+end

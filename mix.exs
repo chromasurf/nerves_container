@@ -28,6 +28,7 @@ defmodule NervesContainer.MixProject do
 
   defp deps do
     [
+      {:jason, "~> 1.2", runtime: false},
       {:nerves, "~> 1.14", runtime: false}
     ]
   end
