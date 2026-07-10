@@ -416,7 +416,7 @@ defmodule NervesContainer.BuildRunner do
   # Override with NERVES_CONTAINER_CCACHE_DIR.
   defp ccache_dir() do
     System.get_env("NERVES_CONTAINER_CCACHE_DIR") ||
-      (Nerves.Env.download_dir() |> Path.expand() |> Path.dirname() |> Path.join("ccache"))
+      Nerves.Env.download_dir() |> Path.expand() |> Path.dirname() |> Path.join("ccache")
   end
 
   @doc false
