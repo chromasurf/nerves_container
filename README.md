@@ -1,13 +1,16 @@
 # Chromasurf — Nerves Container Build Runner
 
-> [!WARNING]
-> Friendly heads-up: this is our internal Formrausch tooling and so far it has
-> only ever built our own Chromasurf systems. Everything was lovingly tested on
-> **macOS 15.7** and nothing else — apple/container officially wants macOS 26,
-> but we're not emotionally ready for Tahoe's super-rounded corners yet. 🙂
-> Fellow macOS-15 holdouts: if your containers come up without internet (ours
-> did), the little network fix below sorts it out. Everyone braver than us:
-> let us know how it goes!
+> [!NOTE]
+> **This now ships with Nerves itself.** As of
+> [Nerves v1.15.0](https://github.com/nerves-project/nerves/releases/tag/v1.15.0),
+> Apple's `container` CLI is supported as a Docker alternative for building Nerves
+> systems on macOS out of the box — and used automatically when available. So on
+> **Nerves ≥ 1.15.0 you very likely don't need this repo at all**.
+>
+> It still works wonderfully on **older Nerves versions**, which is exactly why we
+> keep it around. Tested on **macOS 26** and **macOS 15.7**. macOS 15 holdouts: if
+> your containers come up without internet (ours did), the little network fix below
+> sorts it out. 🙂
 
 **Chromasurf** is an industrial IoT platform built on [Elixir](https://elixir-lang.org) and [Nerves](https://nerves-project.org), developed by [Formrausch](https://formrausch.com). It provides the firmware foundation for connected HMI terminals, gateways, and sensor nodes — with automatic network clustering, over-the-air updates, real-time messaging, and full hardware abstraction built in. Designed for production use in manufacturing, process control, and industrial automation.
 
@@ -52,7 +55,8 @@ The container system service is started automatically if it isn't running.
 ## Requirements
 
 - Apple Silicon Mac
-- [`container`](https://github.com/apple/container) ≥ 1.0.0 (`brew install container`; officially supported on macOS 26, known to work on macOS 15.7 — see the networking note below)
+- Nerves **< 1.15.0** — on Nerves ≥ 1.15.0 this is built in and used automatically (see the note at the top)
+- [`container`](https://github.com/apple/container) ≥ 1.0.0 (`brew install container`; works on macOS 26 and macOS 15.7 — macOS 15 needs the networking note below)
 - `nerves_system_br` ≥ 1.28.0 in the system being built
 - Host Erlang/OTP major version must match the target OTP of the system (standard Nerves rule — e.g. `nerves_system_br` 1.34.0 targets OTP 29)
 
